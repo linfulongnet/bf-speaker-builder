@@ -1,0 +1,19 @@
+qt-src/qt-everywhere-opensource-src-5.7.1.tar.xz
+
+# Docker build outputs
+docker/**/output/
+docker/**/build/
+*.tar
+*.tar.gz
+*.tar.xz
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
