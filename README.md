@@ -7,7 +7,8 @@
 - Qt 组件**全部静态编译**（`libQt5Core.a`、`libQt5Gui.a`、`libQt5Widgets.a` …）
 - glibc / libpthread / libdl 保留**动态链接**，兼容国产 Linux 发行版
 - 镜像仅含 Qt SDK + 编译工具链 + 常用开发库，不包含业务项目
-- 安装目录统一为 `/opt/qt571`
+- **镜像仓库用户名**可通过环境变量 `IMAGE_OWNER` 覆盖（默认 `linfulong`）
+- **Qt 安装路径**由 `QT_VERSION` 自动生成（如 `5.7.1` → `/opt/qt571`）
 
 ## 支持架构
 
@@ -16,6 +17,17 @@
 | amd64 | 已支持 |
 | arm64 | 已支持（QEMU cross-build 验证，生产建议飞腾/鲲鹏原生编译） |
 | loong64 | 预留（需要 LoongArch 补丁） |
+
+## 配置变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `IMAGE_OWNER` | `linfulong` | Docker 镜像仓库用户名 / 组织名 |
+| `QT_VERSION` | `5.7.1` | Qt 版本号，决定镜像 Tag 和安装路径 |
+
+`QT_VERSION` 去掉点号后拼接为安装路径：`/opt/qt${QT_VERSION//./}`。如 `5.7.1` → `/opt/qt571`。
+
+所有 Dockerfile 通过 `--build-arg` 接收这些参数，`scripts/common.sh` 也从环境变量读取，保证一致。
 
 ## 获取 Qt 5.7.1 源码
 
@@ -50,11 +62,14 @@ https://download.qt.io/archive/qt/5.7/5.7.1/single/qt-everywhere-opensource-src-
 mkdir -p qt-src
 wget -P qt-src/ https://download.qt.io/archive/qt/5.7/5.7.1/single/qt-everywhere-opensource-src-5.7.1.tar.xz
 
-# 2. 构建镜像（以 amd64 为例）
+# 2. 构建镜像（默认配置）
 ./build-image.sh amd64
 
+# 或指定自定义镜像仓库名 / Qt 版本
+# IMAGE_OWNER=myorg QT_VERSION=5.7.1 ./build-image.sh amd64
+
 # 3. 查看产物
-docker images | grep linfulong/qt-sdk
+docker images | grep qt-sdk
 ```
 
 构建 ARM64 需先注册 QEMU：
@@ -67,13 +82,13 @@ docker run --rm --privileged tonistiigi/binfmt --install arm64
 ## 项目结构
 
 ```
-├── build-image.sh          # 统一构建入口
+├── build-image.sh          # 统一构建入口（变量：IMAGE_OWNER, QT_VERSION）
 ├── docker/
-│   ├── amd64/Dockerfile    # x86_64
-│   ├── arm64/Dockerfile    # ARM64（含 -no-pch）
-│   └── loong64/Dockerfile  # LoongArch（预留补丁入口）
+│   ├── amd64/Dockerfile    # 通过 ARG 接收 QT_PREFIX / QT_TARBALL
+│   ├── arm64/Dockerfile
+│   └── loong64/Dockerfile
 ├── scripts/
-│   ├── common.sh           # 公共变量与函数
+│   ├── common.sh           # 公共变量与函数（从环境变量读取配置）
 │   ├── install-deps.sh     # 系统依赖安装
 │   ├── build-qt.sh         # Qt 配置、编译、安装
 │   └── verify.sh           # 编译产物验证
@@ -85,20 +100,22 @@ docker run --rm --privileged tonistiigi/binfmt --install arm64
 
 ## 镜像名称
 
-| 架构 | Tag |
-|------|-----|
-| amd64 | `linfulong/qt-sdk:5.7.1-amd64` |
-| arm64 | `linfulong/qt-sdk:5.7.1-arm64` |
-| loong64 | `linfulong/qt-sdk:5.7.1-loong64` |
+| 架构 | 生成规则 |
+|------|----------|
+| amd64 | `${IMAGE_OWNER}/qt-sdk:${QT_VERSION}-amd64` |
+| arm64 | `${IMAGE_OWNER}/qt-sdk:${QT_VERSION}-arm64` |
+| loong64 | `${IMAGE_OWNER}/qt-sdk:${QT_VERSION}-loong64` |
+
+默认示例：`linfulong/qt-sdk:5.7.1-amd64`
 
 ## 使用镜像
 
 ```bash
-# 拉取镜像
-docker pull linfulong/qt-sdk:5.7.1-amd64
+# 拉取镜像（替换为实际的 IMAGE_OWNER 和 QT_VERSION）
+docker pull ${IMAGE_OWNER}/qt-sdk:${QT_VERSION}-amd64
 
 # 挂载项目编译
-docker run --rm -v $(pwd)/my-project:/src linfulong/qt-sdk:5.7.1-amd64 \
+docker run --rm -v $(pwd)/my-project:/src ${IMAGE_OWNER}/qt-sdk:${QT_VERSION}-amd64 \
     sh -c "cd /src && qmake && make"
 ```
 
@@ -108,9 +125,12 @@ GitHub Actions 示例：
 
 ```yaml
 - name: Build Qt project
+  env:
+    IMAGE_OWNER: linfulong
+    QT_VERSION: 5.7.1
   run: |
     docker run --rm -v ${{ github.workspace }}:/src \
-      linfulong/qt-sdk:5.7.1-amd64 \
+      $IMAGE_OWNER/qt-sdk:$QT_VERSION-amd64 \
       sh -c "cd /src && qmake && make"
 ```
 
